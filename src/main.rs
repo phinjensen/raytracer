@@ -32,9 +32,14 @@ struct Scene {
 }
 
 trait Object {
+    /// Checks if a ray intersects this object, and returns the point of intersection if it does.
+    /// Uses a mutable reference to the closest intersection so far, so the caller can pass in
+    /// closer objects, letting this returning None if there's a closer intersection.
     fn intersected_by(&self, ray: &Ray, t_closest: &mut f64) -> Option<Vec3>;
 
     fn color(&self, normal: Vec3, view_direction: Vec3, scene: &Scene) -> Vec3;
+
+    fn normal(&self, point: Vec3) -> Vec3;
 }
 
 impl Object for Sphere {
@@ -42,6 +47,8 @@ impl Object for Sphere {
         let d = ray.direction.normalize();
         let o = ray.origin;
         let c = self.center;
+
+        // B and C factors of circle equation
         let b = 2.0 * (d.x * o.x - d.x * c.x + d.y * o.y - d.y * c.y + d.z * o.z - d.z * c.z);
         let c = o.x.powi(2) - 2.0 * o.x * c.x + c.x.powi(2) + o.y.powi(2) - 2.0 * o.y * c.y
             + c.y.powi(2)
@@ -49,31 +56,49 @@ impl Object for Sphere {
             - 2.0 * o.z * c.z
             + c.z.powi(2)
             - self.radius.powi(2);
-        let disc = b.powi(2) - 4.0 * c;
-        if disc < 0.0 {
+
+        // Discriminant of quadratic euqation
+        let discriminant = b.powi(2) - 4.0 * c;
+        if discriminant < 0.0 {
             return None;
         }
-        let mut root = (-b - disc.sqrt()) / 2.0;
+
+        // Find nearest root
+        let mut root = (-b - discriminant.sqrt()) / 2.0;
         if root <= 0.0 || *t_closest < root {
-            root = (-b + disc.sqrt()) / 2.0;
+            root = (-b + discriminant.sqrt()) / 2.0;
             if root <= 0.0 || *t_closest < root {
                 return None;
             }
         }
+
         *t_closest = root;
-        Some(((ray.at(root) - self.center) / self.radius).normalize())
+        Some(ray.at(root))
     }
 
-    fn color(&self, normal: Vec3, view_direction: Vec3, scene: &Scene) -> Vec3 {
+    fn color(&self, point: Vec3, view_direction: Vec3, scene: &Scene) -> Vec3 {
+        let normal = &self.normal(point);
         let v = -view_direction;
         let dl = scene.direction_to_light.normalize();
         let ndl = normal.dot(&dl);
         let r = 2.0 * normal * normal.dot(&dl) - dl;
+
         let ambient = self.k_a * scene.ambient_light.component_mul(&self.o_d);
         let diffuse = self.k_d * scene.light_color.component_mul(&self.o_d) * ndl.max(0.0);
         let specular = self.k_s
             * scene.light_color.component_mul(&self.o_s)
             * v.dot(&r).max(0.0).powf(self.k_gls);
+
+        let shadow_ray = Ray {
+            origin: point + normal,
+            direction: (scene.direction_to_light - point).normalize(),
+        };
+        if let Some((_, _, t_closest)) = shadow_ray.nearest_hit(scene) {
+            if t_closest > 0.0000001 {
+                return Vec3::new(0.0, 0.0, 0.0);
+            }
+        }
+
         let res = if ndl > 0.0 {
             ambient + diffuse + specular
         } else {
@@ -83,6 +108,10 @@ impl Object for Sphere {
             eprintln!("{res}");
         }
         res
+    }
+
+    fn normal(&self, point: Vec3) -> Vec3 {
+        ((point - self.center) / self.radius).normalize()
     }
 }
 
@@ -96,12 +125,12 @@ impl Ray {
         self.origin + self.direction.normalize() * t
     }
 
-    fn hits<'a>(&self, scene: &'a Scene) -> Option<(Vec3, &'a Box<dyn Object>)> {
+    fn nearest_hit<'a>(&self, scene: &'a Scene) -> Option<(Vec3, &'a Box<dyn Object>, f64)> {
         let mut hit = None;
         let mut t_closest = f64::INFINITY;
         for object in &scene.objects {
-            if let Some(n) = object.intersected_by(&self, &mut t_closest) {
-                hit = Some((n, object));
+            if let Some(p) = object.intersected_by(&self, &mut t_closest) {
+                hit = Some((p, object, t_closest));
             }
         }
         hit
@@ -109,8 +138,8 @@ impl Ray {
 
     fn color(&self, scene: &Scene) -> Vec3 {
         let unit_direction = self.direction.normalize();
-        if let Some((n, object)) = self.hits(scene) {
-            object.color(n, unit_direction, scene)
+        if let Some((p, object, _)) = self.nearest_hit(scene) {
+            object.color(p, unit_direction, scene)
         } else {
             scene.background_color
         }
@@ -287,7 +316,7 @@ fn main() {
                 origin: camera_origin,
                 direction: lower_left + u * horizontal + v * vertical - camera_origin,
             };
-            let color = r.color(&scene_3);
+            let color = r.color(&scene_2);
             print_color(&color);
         }
         println!("");

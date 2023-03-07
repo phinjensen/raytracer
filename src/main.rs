@@ -102,11 +102,13 @@ impl Object for Sphere {
             * v.dot(&r).max(0.0).powf(self.k_gls);
 
         let shadow_ray = Ray {
-            origin: point + normal,
-            direction: (scene.direction_to_light - point).normalize(),
+            origin: point + normal * 0.000001,
+            direction: (scene.direction_to_light - point + normal * 0.000001).normalize(),
         };
         if let Some((_, _, t_closest)) = shadow_ray.nearest_hit(scene) {
-            if t_closest > 0.0000001 {
+            if t_closest > 0.0000001
+                && t_closest < (scene.direction_to_light - point + normal * 0.000001).norm()
+            {
                 return Vec3::new(0.0, 0.0, 0.0);
             }
         }
@@ -116,9 +118,6 @@ impl Object for Sphere {
         } else {
             ambient + diffuse
         };
-        if res.x > 1.0 || res.y > 1.0 || res.z > 1.0 {
-            eprintln!("{res}");
-        }
         res
     }
 
@@ -183,22 +182,24 @@ impl Object for Triangle {
             * scene.light_color.component_mul(&self.o_s)
             * v.dot(&r).max(0.0).powf(self.k_gls);
 
-        //let shadow_ray = Ray {
-        //    origin: point + normal,
-        //    direction: (scene.direction_to_light - point).normalize(),
-        //};
-        //if let Some((_, _, t_closest)) = shadow_ray.nearest_hit(scene) {
-        //    if t_closest > 0.0000001 {
-        //        return Vec3::new(0.0, 0.0, 0.0);
-        //    }
-        //}
-
-        let res = if ndl > 0.0 {
-            ambient + diffuse + specular
-        } else {
-            ambient + diffuse
+        let shadow_origin = point + normal * 0.00000000001;
+        let shadow_ray = Ray {
+            origin: shadow_origin,
+            direction: (scene.direction_to_light).normalize(),
         };
-        res
+        for object in &scene.objects {
+            let mut t = f64::INFINITY;
+            if object.intersected_by(&shadow_ray, &mut t).is_some() {
+                return Vec3::new(0.0, 0.0, 0.0);
+            }
+        }
+
+        ambient + diffuse //+ specular
+                          //let res = if ndl > 0.0 {
+                          //} else {
+                          //    ambient + diffuse
+                          //};
+                          //res
     }
 
     fn normal(&self, _point: Vec3) -> Vec3 {
@@ -238,10 +239,10 @@ impl Ray {
 }
 
 const ASPECT: f64 = 1.0;
-const WIDTH: f64 = 600.0;
+const WIDTH: f64 = 500.0;
 const HEIGHT: f64 = WIDTH / ASPECT;
 
-const VIEWPORT_WIDTH: f64 = 2.0;
+const VIEWPORT_WIDTH: f64 = 1.0;
 const VIEWPORT_HEIGHT: f64 = VIEWPORT_WIDTH / ASPECT;
 const FOCAL_LENGTH: f64 = 1.0;
 
@@ -257,6 +258,7 @@ fn print_color(color: &Vec3) {
 fn main() {
     let scene_1_objects: Vec<Box<dyn Object>> = vec![
         Box::new(Sphere {
+            // white sphere
             center: Vec3::new(0.5, 0.0, -0.15),
             radius: 0.05,
             k_d: 0.8,
@@ -267,6 +269,7 @@ fn main() {
             k_gls: 4.0,
         }),
         Box::new(Sphere {
+            // red sphere
             center: Vec3::new(0.3, 0.0, -0.1),
             radius: 0.08,
             k_d: 0.8,
@@ -276,7 +279,30 @@ fn main() {
             o_s: Vec3::new(0.5, 1.0, 0.5),
             k_gls: 32.0,
         }),
+        Box::new(Sphere {
+            // green sphere
+            center: Vec3::new(-0.6, 0.0, 0.0),
+            radius: 0.3,
+            k_d: 0.7,
+            k_s: 0.5,
+            k_a: 0.1,
+            o_d: Vec3::new(0.0, 1.0, 0.0),
+            o_s: Vec3::new(0.5, 1.0, 0.5),
+            k_gls: 64.0,
+        }),
+        Box::new(Sphere {
+            // reflective sphere
+            center: Vec3::new(0.1, -0.55, 0.25),
+            radius: 0.3,
+            k_d: 0.0,
+            k_s: 0.1,
+            k_a: 0.1,
+            o_d: Vec3::new(0.75, 0.75, 0.75),
+            o_s: Vec3::new(1.0, 1.0, 1.0),
+            k_gls: 10.0,
+        }),
         Box::new(Triangle {
+            // blue triangle
             vertices: [
                 Vec3::new(0.3, -0.3, -0.4),
                 Vec3::new(0.0, 0.3, -0.1),
@@ -290,6 +316,7 @@ fn main() {
             k_gls: 32.0,
         }),
         Box::new(Triangle {
+            // yellow triangle
             vertices: [
                 Vec3::new(-0.2, 0.1, 0.1),
                 Vec3::new(-0.2, -0.5, 0.2),
@@ -305,8 +332,9 @@ fn main() {
     ];
     let scene_2_objects: Vec<Box<dyn Object>> = vec![
         Box::new(Sphere {
-            center: Vec3::new(0.45, 0.0, -0.15),
-            radius: 0.15,
+            // white sphere
+            center: Vec3::new(0.5, 0.0, -0.15),
+            radius: 0.05,
             k_d: 0.8,
             k_s: 0.1,
             k_a: 0.3,
@@ -315,98 +343,40 @@ fn main() {
             k_gls: 4.0,
         }),
         Box::new(Sphere {
-            center: Vec3::new(0.0, 0.0, -0.1),
-            radius: 0.2,
-            k_d: 0.6,
-            k_s: 0.3,
-            k_a: 0.1,
-            o_d: Vec3::new(1.0, 0.0, 0.0),
+            // white sphere
+            center: Vec3::new(0.2, 0.0, -0.15),
+            radius: 0.05,
+            k_d: 0.8,
+            k_s: 0.1,
+            k_a: 0.3,
+            o_d: Vec3::new(1.0, 1.0, 1.0),
             o_s: Vec3::new(1.0, 1.0, 1.0),
-            k_gls: 32.0,
+            k_gls: 4.0,
         }),
         Box::new(Sphere {
-            center: Vec3::new(-0.6, 0.0, 0.0),
-            radius: 0.3,
-            k_d: 0.7,
-            k_s: 0.2,
-            k_a: 0.1,
-            o_d: Vec3::new(0.0, 1.0, 0.0),
-            o_s: Vec3::new(0.5, 1.0, 0.5),
-            k_gls: 64.0,
+            // white sphere
+            center: Vec3::new(-0.1, 0.0, -0.15),
+            radius: 0.05,
+            k_d: 0.8,
+            k_s: 0.1,
+            k_a: 0.3,
+            o_d: Vec3::new(1.0, 1.0, 1.0),
+            o_s: Vec3::new(1.0, 1.0, 1.0),
+            k_gls: 4.0,
         }),
         Box::new(Sphere {
-            center: Vec3::new(0.0, -10000.5, 0.0),
-            radius: 10000.0,
-            k_d: 0.9,
-            k_s: 0.0,
-            k_a: 0.1,
-            o_d: Vec3::new(0.0, 0.0, 1.0),
+            // white sphere
+            center: Vec3::new(-0.4, 0.0, -0.15),
+            radius: 0.05,
+            k_d: 0.8,
+            k_s: 0.1,
+            k_a: 0.3,
+            o_d: Vec3::new(1.0, 1.0, 1.0),
             o_s: Vec3::new(1.0, 1.0, 1.0),
-            k_gls: 16.0,
+            k_gls: 4.0,
         }),
     ];
-    let scene_3_objects: Vec<Box<dyn Object>> = vec![
-        Box::new(Sphere {
-            center: Vec3::new(0.0, 0.0, 0.0),
-            radius: 0.3,
-            k_d: 0.7,
-            k_s: 0.2,
-            k_a: 0.1,
-            o_d: Vec3::new(0.78, 0.38, 0.129),
-            o_s: Vec3::new(0.5, 1.0, 0.5),
-            k_gls: 64.0,
-        }),
-        Box::new(Sphere {
-            center: Vec3::new(0.25, 0.1, 0.0),
-            radius: 0.1,
-            k_d: 0.7,
-            k_s: 0.2,
-            k_a: 0.1,
-            o_d: Vec3::new(0.78, 0.38, 0.129),
-            o_s: Vec3::new(0.5, 1.0, 0.5),
-            k_gls: 64.0,
-        }),
-        Box::new(Sphere {
-            center: Vec3::new(-0.25, 0.1, 0.0),
-            radius: 0.1,
-            k_d: 0.7,
-            k_s: 0.2,
-            k_a: 0.1,
-            o_d: Vec3::new(0.78, 0.38, 0.129),
-            o_s: Vec3::new(0.5, 1.0, 0.5),
-            k_gls: 64.0,
-        }),
-        Box::new(Sphere {
-            center: Vec3::new(-0.05, 0.08, 0.25),
-            radius: 0.05,
-            k_d: 0.5,
-            k_s: 0.4,
-            k_a: 0.1,
-            o_s: Vec3::new(1.0, 1.0, 1.0),
-            o_d: Vec3::new(1.0, 1.0, 1.0),
-            k_gls: 16.0,
-        }),
-        Box::new(Sphere {
-            center: Vec3::new(0.05, 0.08, 0.25),
-            radius: 0.05,
-            k_d: 0.5,
-            k_s: 0.4,
-            k_a: 0.1,
-            o_s: Vec3::new(1.0, 1.0, 1.0),
-            o_d: Vec3::new(1.0, 1.0, 1.0),
-            k_gls: 16.0,
-        }),
-        Box::new(Sphere {
-            center: Vec3::new(0.00, -0.08, 0.25),
-            radius: 0.1,
-            k_d: 0.9,
-            k_s: 0.0,
-            k_a: 0.1,
-            o_d: Vec3::new(1.0, 0.0, 0.0),
-            o_s: Vec3::new(1.0, 1.0, 1.0),
-            k_gls: 64.0,
-        }),
-    ];
+    let scene_3_objects: Vec<Box<dyn Object>> = vec![];
 
     let scene_1 = Scene {
         direction_to_light: Vec3::new(1.0, 0.0, 0.0),

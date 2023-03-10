@@ -7,10 +7,18 @@ pub struct Material {
     pub k_gls: f64,
     pub o_d: Vec3,
     pub o_s: Vec3,
+    pub refl: f64,
 }
 
 impl Material {
-    fn color(&self, normal: &Vec3, view_direction: Vec3, scene: &Scene) -> Vec3 {
+    fn color(
+        &self,
+        point: Vec3,
+        normal: Vec3,
+        view_direction: Vec3,
+        scene: &Scene,
+        depth: usize,
+    ) -> Vec3 {
         let v = -view_direction;
         let dl = scene.direction_to_light.normalize();
         let ndl = normal.dot(&dl);
@@ -22,7 +30,16 @@ impl Material {
             * scene.light_color.component_mul(&self.o_s)
             * v.dot(&r).max(0.0).powf(self.k_gls);
 
-        ambient + diffuse + specular
+        let res = ambient + diffuse + specular;
+        if self.refl > 0.0 {
+            let reflection_ray = Ray::new(
+                point + normal * 0.0000001,
+                view_direction - 2.0 * normal * view_direction.dot(&normal),
+            );
+            res + self.refl * reflection_ray.color(scene, depth + 1)
+        } else {
+            res
+        }
     }
 }
 
@@ -51,17 +68,20 @@ pub trait Object {
         self.normal_ugly(point).normalize()
     }
 
-    fn color(&self, point: Vec3, view_direction: Vec3, scene: &Scene) -> Vec3 {
-        let normal = &self.normal(point);
-        let shadow_origin = point + normal * 0.00000000001;
-        let shadow_ray = Ray::new(shadow_origin, scene.direction_to_light);
-        for object in &scene.objects {
-            let mut t = f64::INFINITY;
-            if object.intersected_by(&shadow_ray, &mut t).is_some() {
-                return Vec3::new(0.0, 0.0, 0.0);
+    fn color(&self, point: Vec3, view_direction: Vec3, scene: &Scene, depth: usize) -> Vec3 {
+        let normal = self.normal(point);
+        if self.get_material().refl == 0.0 {
+            let shadow_origin = point + normal * 0.00000000001;
+            let shadow_ray = Ray::new(shadow_origin, scene.direction_to_light);
+            for object in &scene.objects {
+                let mut t = f64::INFINITY;
+                if object.intersected_by(&shadow_ray, &mut t).is_some() {
+                    return Vec3::new(0.0, 0.0, 0.0);
+                }
             }
         }
-        self.get_material().color(normal, view_direction, &scene)
+        self.get_material()
+            .color(point, normal, view_direction, &scene, depth)
     }
 }
 

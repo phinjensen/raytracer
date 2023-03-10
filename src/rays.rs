@@ -37,10 +37,13 @@ impl Ray {
         hit
     }
 
-    pub fn color(&self, scene: &Scene) -> Vec3 {
+    pub fn color(&self, scene: &Scene, depth: usize) -> Vec3 {
+        if depth > 3 {
+            return Vec3::zeros();
+        }
         let unit_direction = self.direction;
         if let Some((p, object, _)) = self.nearest_hit(scene) {
-            object.color(p, unit_direction, scene)
+            object.color(p, unit_direction, scene, depth)
         } else {
             scene.background_color
         }

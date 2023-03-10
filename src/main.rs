@@ -1,6 +1,6 @@
 use raytracer::geometry::Vec3;
 use raytracer::rays::Ray;
-use raytracer::scene::get_scene_1;
+use raytracer::scene::{get_scene_1, get_scene_2, get_scene_3};
 
 struct Camera {
     look_at: Vec3,
@@ -33,6 +33,8 @@ fn main() {
     let lower_left =
         camera_origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, FOCAL_LENGTH);
 
+    let scene = get_scene_2();
+
     println!("P3\n{WIDTH} {HEIGHT}\n255");
     for r in (0..HEIGHT as i64).rev() {
         for c in 0..WIDTH as i64 {
@@ -42,7 +44,7 @@ fn main() {
                 camera_origin,
                 lower_left + u * horizontal + v * vertical - camera_origin,
             );
-            let color = r.color(&get_scene_1());
+            let color = r.color(&scene, 0);
             print_color(&color);
         }
         println!("");
